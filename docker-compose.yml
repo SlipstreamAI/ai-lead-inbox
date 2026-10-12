@@ -1,0 +1,44 @@
+services:
+  web:
+    build: .
+    ports:
+      - "4317:4317"
+    environment:
+      LLM_MODE: ${LLM_MODE:-mock}
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      LLM_TIMEOUT_MS: ${LLM_TIMEOUT_MS:-20000}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      N8N_WEBHOOK_URL: http://n8n:5678/webhook/lead
+      DATA_DIR: /data
+      PORT: "4317"
+      HOSTNAME: 0.0.0.0
+    volumes:
+      - lead_data:/data
+    depends_on:
+      - n8n
+
+  n8n:
+    image: n8nio/n8n:2.43.3
+    ports:
+      - "5678:5678"
+    environment:
+      N8N_HOST: localhost
+      N8N_PORT: "5678"
+      N8N_PROTOCOL: http
+      WEBHOOK_URL: http://localhost:5678/
+      N8N_SECURE_COOKIE: "false"
+      GENERIC_TIMEZONE: UTC
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_PERSONALIZATION_ENABLED: "false"
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: "false"
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n:/files/n8n:ro
+      - ./docker/n8n-start.sh:/n8n-start.sh:ro
+    entrypoint: ["sh", "/n8n-start.sh"]
+
+volumes:
+  lead_data:
+  n8n_data:

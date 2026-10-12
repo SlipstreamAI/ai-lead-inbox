@@ -1,0 +1,48 @@
+{
+  "text": "Hot lead: Priya Shah at Helio Clinic — score 100 — Avery Chen — 15m SLA",
+  "blocks": [
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": "Hot lead · 100",
+        "emoji": false
+      }
+    },
+    {
+      "type": "section",
+      "fields": [
+        {
+          "type": "mrkdwn",
+          "text": "*Contact*\nPriya Shah\npriya@helioclinic.com"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Company*\nHelio Clinic\nFounder"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Owner*\nAvery Chen\n15 min SLA"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Channel*\n#hot-leads"
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Intent*\nHelio Clinic, a healthcare team, needs a working version this week. Priya Shah (Founder) wrote in because new inquiries land in a shared inbox and sit there."
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Draft*\nHelio Clinic's lead inbox, scored before anyone is pinged"
+      }
+    }
+  ]
+}

@@ -1,0 +1,74 @@
+[
+  {
+    "key": "hot",
+    "label": "Hot clinic",
+    "blurb": "Founder, work email, this-week timeline, budget that clears the senior AE bar.",
+    "id": "lead_sample_hot",
+    "sampleNow": "2026-04-14T15:04:00.000Z",
+    "input": {
+      "name": "Priya Shah",
+      "email": "priya@helioclinic.com",
+      "company": "Helio Clinic",
+      "role": "Founder",
+      "website": "helioclinic.com",
+      "message": "Patient inquiries sit in a shared inbox. I want n8n to score each lead, write the useful bits into HubSpot, and ping Slack before the front desk copies anything by hand.",
+      "budget": 18000,
+      "timeline": "asap",
+      "source": "sample"
+    }
+  },
+  {
+    "key": "warm",
+    "label": "Warm ops",
+    "blurb": "Operations manager, real company domain, this-quarter project.",
+    "id": "lead_sample_warm",
+    "sampleNow": "2026-04-14T15:06:00.000Z",
+    "input": {
+      "name": "Marcus Adeyemi",
+      "email": "marcus@brightparcel.co",
+      "company": "Bright Parcel",
+      "role": "Operations Manager",
+      "website": "brightparcel.co",
+      "message": "Shopify creates a lead row in a spreadsheet. My team copies it into the CRM by hand, and the account owner hears about it late. We want that path automated this quarter.",
+      "budget": 4000,
+      "timeline": "this_quarter",
+      "source": "sample"
+    }
+  },
+  {
+    "key": "cold",
+    "label": "Cold freelance",
+    "blurb": "Free email, small budget, still exploring.",
+    "id": "lead_sample_cold",
+    "sampleNow": "2026-04-14T15:08:00.000Z",
+    "input": {
+      "name": "Sam Rivera",
+      "email": "sam.rivera@gmail.com",
+      "company": "Rivera Studio",
+      "role": "Designer",
+      "website": "",
+      "message": "Maybe someday a Zapier thing for my contact form. Just exploring, not ready to buy.",
+      "budget": 500,
+      "timeline": "exploring",
+      "source": "sample"
+    }
+  },
+  {
+    "key": "review",
+    "label": "Review hold",
+    "blurb": "Disposable inbox and a guest-post pitch. Sales should not see this.",
+    "id": "lead_sample_review",
+    "sampleNow": "2026-04-14T15:10:00.000Z",
+    "input": {
+      "name": "Alex Guest",
+      "email": "seo@mailinator.com",
+      "company": "Rank Farm",
+      "role": "Outreach",
+      "website": "",
+      "message": "Guest post opportunity with backlinks for your readers. We can publish this week.",
+      "budget": "unknown",
+      "timeline": "asap",
+      "source": "sample"
+    }
+  }
+]

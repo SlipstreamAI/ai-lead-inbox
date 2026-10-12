@@ -1,0 +1,33 @@
+﻿Lead ID,Created At,Full Name,Email,Company,Role,Website,Need,Monthly Budget USD,Budget Label,Timeline,Source,Score,Tier,Owner,Owner Role,Slack Channel,SLA Minutes,Route Reason,Industry,Company Size,Intent,Pain Points,Personalization Hooks,Next Action,Draft Subject,Draft Body,LLM Provider,LLM Model,Alert Status,Origin
+lead_sample_review,2026-04-14T15:10:00.000Z,Alex Guest,seo@mailinator.com,Rank Farm,Outreach,,Guest post opportunity with backlinks for your readers. We can publish this week.,,Not specified,asap,sample,0,disqualified,Review queue,Ops,#review-queue,1440,"Held for review (disposable_email, spam_pattern). seo@mailinator.com is not routed to sales.",Professional services,Unknown,"Rank Farm, a professional services team, needs a working version this week. Alex Guest (Outreach) wrote in because the submission does not look like a real project inquiry.",the submission does not look like a real project inquiry,Outreach at Rank Farm | This week | the submission does not look like a real project inquiry,Do not email the sender. An operator clears or drops the row from #review-queue.,Hold: Rank Farm,"Internal note. Do not send this to the submitter.
+
+Alex Guest <seo@mailinator.com> was held: Held for review (disposable_email, spam_pattern). seo@mailinator.com is not routed to sales.
+Company: Rank Farm.
+Leave the row in #review-queue until an operator clears it.",mock,mock-lead-autopilot-v1,stored,typescript
+lead_sample_cold,2026-04-14T15:08:00.000Z,Sam Rivera,sam.rivera@gmail.com,Rivera Studio,Designer,,"Maybe someday a Zapier thing for my contact form. Just exploring, not ready to buy.",500,"Under $1,500",exploring,sample,22,cold,Nurture sequence,Marketing,#nurture-digest,1440,Score under 40. File it and include it in the daily nurture digest.,Professional services,1-10,"Rivera Studio, a professional services team, is exploring and has not picked a start date. Sam Rivera (Designer) wrote in because an existing automation stack still needs a judgment step.",an existing automation stack still needs a judgment step,"Designer at Rivera Studio | Exploring | Budget band Under $1,500 | an existing automation stack still needs a judgment step",Do not book a sales call. Add the contact to the nurture sequence and mention them in the daily digest.,"A note on Rivera Studio's inbound, for whenever you pick it up","Hi Sam,
+
+Thanks for the note about Rivera Studio. The sticking point you described: an existing automation stack still needs a judgment step.
+
+For a professional services team, I would keep the first version deliberately small. One public form. A score with the reason attached. A CRM row in a sheet, Airtable, or the system you already use. A draft reply. A Slack alert to Nurture sequence.
+
+No need to book anything. When the timing is real, the same path — score, file, draft, alert — is a small build.
+
+— Northline",mock,mock-lead-autopilot-v1,stored,typescript
+lead_sample_warm,2026-04-14T15:06:00.000Z,Marcus Adeyemi,marcus@brightparcel.co,Bright Parcel,Operations Manager,https://brightparcel.co,"Shopify creates a lead row in a spreadsheet. My team copies it into the CRM by hand, and the account owner hears about it late. We want that path automated this quarter.",4000,"$1,500–$4,999",this_quarter,sample,64,warm,Jordan Hale,Account executive,#inbound,240,Score 40 to 69. Standard inbound response within four hours.,Logistics,11-50,"Bright Parcel, a logistics team, is planning the rollout this quarter. Marcus Adeyemi (Operations Manager) wrote in because lead fields are copied by hand into a sheet or CRM.",lead fields are copied by hand into a sheet or CRM | the CRM record is missing the context sales needs,"Operations Manager at Bright Parcel | This quarter | Budget band $1,500–$4,999 | lead fields are copied by hand into a sheet or CRM",Reply within four hours. Offer Jordan Hale's 30-minute working session and send the draft as written.,"From Bright Parcel's form to the CRM, without the copy-paste","Hi Marcus,
+
+Thanks for the note about Bright Parcel. The sticking point you described: lead fields are copied by hand into a sheet or CRM.
+
+For a logistics team, I would keep the first version deliberately small. One public form. A score with the reason attached. A CRM row in a sheet, Airtable, or the system you already use. A draft reply. A Slack alert to Jordan Hale.
+
+If you want, we can spend half an hour mapping this onto n8n, Make, or Zapier and leave you with the CRM row and the alert actually firing.
+
+— Northline",mock,mock-lead-autopilot-v1,stored,typescript
+lead_sample_hot,2026-04-14T15:04:00.000Z,Priya Shah,priya@helioclinic.com,Helio Clinic,Founder,https://helioclinic.com,"Patient inquiries sit in a shared inbox. I want n8n to score each lead, write the useful bits into HubSpot, and ping Slack before the front desk copies anything by hand.",18000,"$15,000+",asap,sample,100,hot,Avery Chen,Senior AE,#hot-leads,15,Score 70 or higher. A senior AE owns the first response.,Healthcare,"201-1,000","Helio Clinic, a healthcare team, needs a working version this week. Priya Shah (Founder) wrote in because new inquiries land in a shared inbox and sit there.",new inquiries land in a shared inbox and sit there | lead fields are copied by hand into a sheet or CRM | the CRM record is missing the context sales needs,"Founder at Helio Clinic | This week | Budget band $15,000+ | new inquiries land in a shared inbox and sit there","Call Priya within 15 minutes. Use the draft, then offer to stand up the form → CRM → Slack path on their stack.","Helio Clinic's lead inbox, scored before anyone is pinged","Hi Priya,
+
+Thanks for the note about Helio Clinic. The sticking point you described: new inquiries land in a shared inbox and sit there.
+
+For a healthcare team, I would keep the first version deliberately small. One public form. A score with the reason attached. A CRM row in a sheet, Airtable, or the system you already use. A draft reply. A Slack alert to Avery Chen.
+
+I can put a working version on a call this week: the form is scored, the CRM row is written, and Slack pings the owner. If that is the right shape, we wire it to your stack before the week is out.
+
+— Northline",mock,mock-lead-autopilot-v1,stored,typescript

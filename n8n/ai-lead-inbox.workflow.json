@@ -1,0 +1,351 @@
+{
+  "name": "AI Lead Inbox -> CRM Autopilot",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## AI Lead Inbox → CRM Autopilot\n\nA public form posts here. This workflow scores the lead with the same rules as `src/lib/lead-logic.js`, asks the app's AI step to enrich it, writes the CRM row, and posts a Slack-style alert.\n\n**Mock mode needs no API key.** The AI enrich node calls `POST /api/llm/enrich` on the Next.js app. With `LLM_MODE=mock` (the default) that step is deterministic.\n\n1. Import this file.\n2. Open **Score and route** and confirm `pipelineBaseUrl` (compose: `http://web:4317`, host: `http://127.0.0.1:4317`).\n3. Publish the workflow.\n4. Production URL: `POST /webhook/lead`.",
+        "height": 360,
+        "width": 460,
+        "color": 4
+      },
+      "id": "a1000000-0000-4000-8000-000000000001",
+      "name": "How this runs",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Credentials are placeholders\n\nThe live path uses no stored secrets. Scoring is in the Code node. Enrichment, CRM, and the alert are HTTP calls to the app.\n\n**Live model.** Set `LLM_MODE=openai`, `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL` on the web service. Or disable **AI enrich**, enable **OpenAI direct**, and connect it between **Valid lead?** and **Assemble record**. Attach a Header Auth credential:\n\n- Name: `Authorization`\n- Value: `Bearer <your key>`\n\nThe credential on that node is `PLACEHOLDER_OPENAI_HEADER_AUTH`. Do not paste a key into this JSON.\n\n**Slack.** Set `SLACK_WEBHOOK_URL` on the web service. The alert node keeps posting to the app, and the app forwards the same payload. To post from n8n itself, point **Post Slack-style alert** at your incoming webhook URL. The body is already Slack Block Kit.\n\n**Google Sheets / Airtable.** Replace **Write CRM row** with the Sheets or Airtable node. The record fields match `samples/leads.csv`.",
+        "height": 460,
+        "width": 460,
+        "color": 6
+      },
+      "id": "a1000000-0000-4000-8000-000000000002",
+      "name": "Swap in your accounts",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1680,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Make and Zapier\n\n| Step | Make | Zapier |\n| --- | --- | --- |\n| Trigger | Custom webhook | Webhooks by Zapier, Catch Hook |\n| Score and route | Tools → Run JavaScript, paste `scoreLead` / `routeLead` from `src/lib/lead-logic.js` | Code by Zapier (JavaScript) |\n| Enrich | HTTP → the app `/api/llm/enrich`, or the OpenAI module with JSON response | OpenAI, or Webhooks POST to `/api/llm/enrich` |\n| CRM | Google Sheets Add Row, or Airtable Create Record | Google Sheets or Airtable |\n| Alert | HTTP POST the Slack incoming webhook | Slack: Send Channel Message |\n\nRoute with a Router (Make) or Paths (Zapier) on `tier`: hot ≥ 70, warm ≥ 40, cold, and disqualified when flags are present.",
+        "height": 340,
+        "width": 520,
+        "color": 3
+      },
+      "id": "a1000000-0000-4000-8000-000000000003",
+      "name": "Make and Zapier",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "b2000000-0000-4000-8000-000000000001",
+      "name": "Lead webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        480,
+        220
+      ],
+      "webhookId": "c0ffee00-1111-4111-8111-000000000001"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Edit pipelineBaseUrl if n8n is not on the docker compose network.\n// Inside compose the Next.js app is http://web:4317. On the host, use http://127.0.0.1:4317.\nconst CONFIG = {\n  pipelineBaseUrl: \"http://web:4317\",\n};\n\n// LEAD_LOGIC_START\n// Shared lead logic for the TypeScript pipeline, the CLI, and the n8n Code\n// nodes. Keep this file free of Node-only APIs so it can be embedded as-is.\n\nconst FREE_EMAIL_DOMAINS = new Set([\n  \"gmail.com\",\n  \"googlemail.com\",\n  \"yahoo.com\",\n  \"yahoo.co.uk\",\n  \"hotmail.com\",\n  \"outlook.com\",\n  \"live.com\",\n  \"icloud.com\",\n  \"me.com\",\n  \"aol.com\",\n  \"proton.me\",\n  \"protonmail.com\",\n  \"gmx.com\",\n  \"mail.com\",\n  \"msn.com\",\n]);\n\nconst DISPOSABLE_EMAIL_DOMAINS = new Set([\n  \"mailinator.com\",\n  \"guerrillamail.com\",\n  \"tempmail.com\",\n  \"10minutemail.com\",\n  \"yopmail.com\",\n  \"trashmail.com\",\n]);\n\nconst SPAM_PATTERNS = [\n  /\\bguest posts?\\b/i,\n  /\\bbacklinks?\\b/i,\n  /\\bcrypto airdrop\\b/i,\n  /\\bbuy followers\\b/i,\n];\n\nconst BUDGET_BANDS = {\n  under_1500: 800,\n  \"1500_4999\": 1500,\n  \"5000_14999\": 5000,\n  \"15000_plus\": 15000,\n  unknown: null,\n};\n\nconst TIMELINE_ALIASES = {\n  asap: \"asap\",\n  immediate: \"asap\",\n  immediately: \"asap\",\n  this_week: \"asap\",\n  \"this week\": \"asap\",\n  this_month: \"this_month\",\n  \"this month\": \"this_month\",\n  this_quarter: \"this_quarter\",\n  \"this quarter\": \"this_quarter\",\n  this_year: \"this_year\",\n  \"this year\": \"this_year\",\n  exploring: \"exploring\",\n  \"just exploring\": \"exploring\",\n  someday: \"exploring\",\n};\n\nconst TIMELINE_LABELS = {\n  asap: \"This week\",\n  this_month: \"This month\",\n  this_quarter: \"This quarter\",\n  this_year: \"This year\",\n  exploring: \"Exploring\",\n};\n\nconst TIER_LABELS = {\n  hot: \"Hot\",\n  warm: \"Warm\",\n  cold: \"Cold\",\n  disqualified: \"Review\",\n};\n\nconst BREAKDOWN_META = [\n  { key: \"budget\", label: \"Budget\", max: 30 },\n  { key: \"timeline\", label: \"Timeline\", max: 25 },\n  { key: \"emailDomain\", label: \"Work email\", max: 15 },\n  { key: \"seniority\", label: \"Role\", max: 15 },\n  { key: \"intent\", label: \"Intent in the note\", max: 10 },\n  { key: \"website\", label: \"Website\", max: 5 },\n];\n\nconst CSV_HEADERS = [\n  \"Lead ID\",\n  \"Created At\",\n  \"Full Name\",\n  \"Email\",\n  \"Company\",\n  \"Role\",\n  \"Website\",\n  \"Need\",\n  \"Monthly Budget USD\",\n  \"Budget Label\",\n  \"Timeline\",\n  \"Source\",\n  \"Score\",\n  \"Tier\",\n  \"Owner\",\n  \"Owner Role\",\n  \"Slack Channel\",\n  \"SLA Minutes\",\n  \"Route Reason\",\n  \"Industry\",\n  \"Company Size\",\n  \"Intent\",\n  \"Pain Points\",\n  \"Personalization Hooks\",\n  \"Next Action\",\n  \"Draft Subject\",\n  \"Draft Body\",\n  \"LLM Provider\",\n  \"LLM Model\",\n  \"Alert Status\",\n  \"Origin\",\n];\n\nconst ROUTES = {\n  disqualified: {\n    tier: \"disqualified\",\n    owner: \"Review queue\",\n    ownerRole: \"Ops\",\n    channel: \"#review-queue\",\n    slaMinutes: 1440,\n  },\n  hot: {\n    tier: \"hot\",\n    owner: \"Avery Chen\",\n    ownerRole: \"Senior AE\",\n    channel: \"#hot-leads\",\n    slaMinutes: 15,\n  },\n  warm: {\n    tier: \"warm\",\n    owner: \"Jordan Hale\",\n    ownerRole: \"Account executive\",\n    channel: \"#inbound\",\n    slaMinutes: 240,\n  },\n  cold: {\n    tier: \"cold\",\n    owner: \"Nurture sequence\",\n    ownerRole: \"Marketing\",\n    channel: \"#nurture-digest\",\n    slaMinutes: 1440,\n  },\n};\n\nfunction clamp(value, min, max) {\n  return Math.max(min, Math.min(max, value));\n}\n\nfunction cleanLine(value) {\n  return String(value ?? \"\")\n    .replace(/\\s+/g, \" \")\n    .trim();\n}\n\nfunction cleanMessage(value) {\n  return String(value ?? \"\")\n    .replace(/\\r\\n/g, \"\\n\")\n    .replace(/[ \\t]+\\n/g, \"\\n\")\n    .replace(/\\n{3,}/g, \"\\n\\n\")\n    .trim();\n}\n\nfunction emailDomain(email) {\n  const parts = String(email || \"\").toLowerCase().split(\"@\");\n  if (parts.length !== 2) return \"\";\n  return parts[1].replace(/\\.+$/, \"\");\n}\n\nfunction isFreeEmail(email) {\n  return FREE_EMAIL_DOMAINS.has(emailDomain(email));\n}\n\nfunction isDisposableEmail(email) {\n  return DISPOSABLE_EMAIL_DOMAINS.has(emailDomain(email));\n}\n\nfunction isSpamMessage(message) {\n  return SPAM_PATTERNS.some((pattern) => pattern.test(message || \"\"));\n}\n\nfunction bandKeyFromAmount(amount) {\n  if (amount == null) return \"unknown\";\n  if (amount >= 15000) return \"15000_plus\";\n  if (amount >= 5000) return \"5000_14999\";\n  if (amount >= 1500) return \"1500_4999\";\n  return \"under_1500\";\n}\n\nfunction budgetLabel(amount) {\n  if (amount == null) return \"Not specified\";\n  if (amount >= 15000) return \"$15,000+\";\n  if (amount >= 5000) return \"$5,000–$14,999\";\n  if (amount >= 1500) return \"$1,500–$4,999\";\n  return \"Under $1,500\";\n}\n\nfunction parseBudget(value) {\n  if (value == null || value === \"\") {\n    return { error: \"Choose a monthly budget, or say you are not sure yet.\" };\n  }\n  if (typeof value === \"number\" && Number.isFinite(value)) {\n    if (value < 0) return { error: \"Budget cannot be negative.\" };\n    const amount = Math.round(value);\n    return { amount, band: bandKeyFromAmount(amount) };\n  }\n  const text = String(value).trim().toLowerCase();\n  if (Object.prototype.hasOwnProperty.call(BUDGET_BANDS, text)) {\n    const amount = BUDGET_BANDS[text];\n    return { amount, band: text };\n  }\n  const digits = text.replace(/[$,\\s]/g, \"\").replace(/\\+$/, \"\");\n  if (/^\\d+(\\.\\d+)?$/.test(digits)) {\n    const amount = Math.round(Number(digits));\n    return { amount, band: bandKeyFromAmount(amount) };\n  }\n  return { error: \"Choose a monthly budget, or say you are not sure yet.\" };\n}\n\nfunction parseTimeline(value) {\n  const text = cleanLine(value).toLowerCase();\n  if (!text) return { error: \"Choose a timeline.\" };\n  const timeline = TIMELINE_ALIASES[text];\n  if (!timeline) return { error: \"Choose a timeline the autopilot understands.\" };\n  return { timeline };\n}\n\nfunction parseWebsite(value) {\n  const raw = cleanLine(value);\n  if (!raw) return { website: \"\" };\n  const withScheme = /^https?:\\/\\//i.test(raw) ? raw : `https://${raw}`;\n  let url;\n  try {\n    url = new URL(withScheme);\n  } catch {\n    return { error: \"That website does not look like a domain.\" };\n  }\n  if (!url.hostname.includes(\".\") || !/^[\\w.-]+$/.test(url.hostname)) {\n    return { error: \"That website does not look like a domain.\" };\n  }\n  const path = url.pathname === \"/\" ? \"\" : url.pathname.replace(/\\/$/, \"\");\n  return { website: `https://${url.hostname}${path}` };\n}\n\nfunction validateLead(input) {\n  const source = input && typeof input === \"object\" ? input : {};\n  const errors = {};\n  const name = cleanLine(source.name);\n  const email = cleanLine(source.email).toLowerCase();\n  const company = cleanLine(source.company);\n  const role = cleanLine(source.role);\n  const message = cleanMessage(source.message);\n  const originSource = cleanLine(source.source || \"web_form\").slice(0, 40) || \"web_form\";\n\n  if (name.length < 2) errors.name = \"Add the person's name.\";\n  if (name.length > 80) errors.name = \"Keep the name under 80 characters.\";\n  if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {\n    errors.email = \"Add a real email address.\";\n  }\n  if (company.length < 2) errors.company = \"Add a company or project name.\";\n  if (company.length > 80) errors.company = \"Keep the company name under 80 characters.\";\n  if (role.length < 2) errors.role = \"Add a role, even if it is Founder or Student.\";\n  if (role.length > 80) errors.role = \"Keep the role under 80 characters.\";\n  if (message.length < 12) errors.message = \"Tell us what should happen after the form is submitted.\";\n  if (message.length > 2000) errors.message = \"Keep the note under 2,000 characters.\";\n\n  const budget = parseBudget(source.budget);\n  if (budget.error) errors.budget = budget.error;\n  const timeline = parseTimeline(source.timeline);\n  if (timeline.error) errors.timeline = timeline.error;\n  const website = parseWebsite(source.website);\n  if (website.error) errors.website = website.error;\n\n  if (Object.keys(errors).length) return { ok: false, errors };\n\n  return {\n    ok: true,\n    lead: {\n      name,\n      email,\n      company,\n      role,\n      website: website.website,\n      message,\n      budgetUsd: budget.amount,\n      budgetBand: budget.band,\n      budgetLabel: budgetLabel(budget.amount),\n      timeline: timeline.timeline,\n      source: originSource,\n    },\n  };\n}\n\nfunction scoreBudget(amount) {\n  if (amount == null) return 4;\n  if (amount >= 15000) return 30;\n  if (amount >= 5000) return 22;\n  if (amount >= 1500) return 14;\n  return 6;\n}\n\nfunction scoreTimeline(timeline) {\n  const points = { asap: 25, this_month: 22, this_quarter: 16, this_year: 8, exploring: 4 };\n  return points[timeline] ?? 2;\n}\n\nfunction scoreEmail(email) {\n  if (!String(email || \"\").includes(\"@\")) return 0;\n  if (isDisposableEmail(email)) return 0;\n  if (isFreeEmail(email)) return 4;\n  return 15;\n}\n\nfunction scoreSeniority(role) {\n  const text = String(role || \"\").toLowerCase();\n  if (/(founder|co-founder|cofounder|\\bceo\\b|\\bowner\\b|\\bpresident\\b|\\bpartner\\b|managing director)/.test(text)) {\n    return 15;\n  }\n  if (/(\\bvp\\b|vice president|\\bdirector\\b|head of|\\bchief\\b)/.test(text)) return 12;\n  if (/(\\bmanager\\b|\\blead\\b)/.test(text)) return 8;\n  return 4;\n}\n\nfunction scoreIntent(message) {\n  const text = String(message || \"\");\n  let points = 0;\n  if (/\\b(automation|workflow|n8n|zapier|make\\.com|integromat)\\b/i.test(text)) points += 4;\n  if (/\\b(crm|hubspot|salesforce|airtable|google sheets?|spreadsheets?)\\b/i.test(text)) points += 3;\n  if (/\\b(leads?|inbound|pipeline)\\b/i.test(text)) points += 3;\n  return Math.min(10, points);\n}\n\nfunction scoreLead(lead) {\n  const breakdown = {\n    budget: scoreBudget(lead.budgetUsd),\n    timeline: scoreTimeline(lead.timeline),\n    emailDomain: scoreEmail(lead.email),\n    seniority: scoreSeniority(lead.role),\n    intent: scoreIntent(lead.message),\n    website: lead.website ? 5 : 0,\n    penalties: 0,\n  };\n  const flags = [];\n  if (!String(lead.email || \"\").includes(\"@\")) {\n    flags.push(\"invalid_email\");\n    breakdown.penalties += 30;\n  } else if (isDisposableEmail(lead.email)) {\n    flags.push(\"disposable_email\");\n    breakdown.penalties += 40;\n  }\n  if (isSpamMessage(lead.message)) {\n    flags.push(\"spam_pattern\");\n    breakdown.penalties += 50;\n  }\n  const positive =\n    breakdown.budget +\n    breakdown.timeline +\n    breakdown.emailDomain +\n    breakdown.seniority +\n    breakdown.intent +\n    breakdown.website;\n  const score = clamp(positive - breakdown.penalties, 0, 100);\n  return { score, breakdown, flags };\n}\n\nfunction routeLead(lead, scored) {\n  const flags = scored.flags || [];\n  if (flags.includes(\"spam_pattern\") || flags.includes(\"disposable_email\") || flags.includes(\"invalid_email\")) {\n    return {\n      ...ROUTES.disqualified,\n      reason: `Held for review (${flags.join(\", \")}). ${lead.email} is not routed to sales.`,\n    };\n  }\n  if (scored.score >= 70) {\n    return {\n      ...ROUTES.hot,\n      reason: \"Score 70 or higher. A senior AE owns the first response.\",\n    };\n  }\n  if (scored.score >= 40) {\n    return {\n      ...ROUTES.warm,\n      reason: \"Score 40 to 69. Standard inbound response within four hours.\",\n    };\n  }\n  return {\n    ...ROUTES.cold,\n    reason: \"Score under 40. File it and include it in the daily nurture digest.\",\n  };\n}\n\nfunction inferIndustry(lead) {\n  const haystack = `${lead.company} ${lead.message} ${lead.website}`;\n  const rules = [\n    [/clinic|dental|patient|health|hospital|therapy/i, \"Healthcare\"],\n    [/realtor|real estate|property|brokerage|mortgage/i, \"Real estate\"],\n    [/parcel|logistics|shipping|freight|warehouse/i, \"Logistics\"],\n    [/shopify|ecommerce|e-commerce|online store|\\bdtc\\b/i, \"Ecommerce\"],\n    [/law firm|attorney|legal|counsel/i, \"Legal services\"],\n    [/agency|marketing|demand gen|\\bads\\b/i, \"Marketing agency\"],\n    [/saas|software|platform|devtools/i, \"B2B software\"],\n  ];\n  for (const [pattern, industry] of rules) {\n    if (pattern.test(haystack)) return industry;\n  }\n  return \"Professional services\";\n}\n\nfunction inferCompanySize(amount) {\n  if (amount == null) return \"Unknown\";\n  if (amount >= 15000) return \"201-1,000\";\n  if (amount >= 5000) return \"51-200\";\n  if (amount >= 1500) return \"11-50\";\n  return \"1-10\";\n}\n\nfunction inferPainPoints(lead, routing) {\n  const text = lead.message || \"\";\n  const rules = [\n    [/shared inbox|\\binbox\\b/i, \"new inquiries land in a shared inbox and sit there\"],\n    [/spreadsheet|google sheet|copy|manual|by hand/i, \"lead fields are copied by hand into a sheet or CRM\"],\n    [/hubspot|salesforce|\\bcrm\\b/i, \"the CRM record is missing the context sales needs\"],\n    [/slack|notify|alert|ping/i, \"the right person hears about the lead too late\"],\n    [/follow-?up|response time|\\bslow\\b/i, \"first response depends on whoever notices the form\"],\n    [/n8n|zapier|make\\.com|integromat/i, \"an existing automation stack still needs a judgment step\"],\n    [/score|qualif/i, \"every lead is treated the same, whether or not it is real\"],\n  ];\n  const found = [];\n  for (const [pattern, pain] of rules) {\n    if (pattern.test(text) && !found.includes(pain)) found.push(pain);\n  }\n  if (found.length) return found.slice(0, 3);\n  const fallback = {\n    hot: \"the team needs a person on the lead immediately, and the handoff is still manual\",\n    warm: \"inbound requests arrive, but the path into the CRM is still fuzzy\",\n    cold: \"there is curiosity about automation, without a live process to fix yet\",\n    disqualified: \"the submission does not look like a real project inquiry\",\n  };\n  return [fallback[routing.tier] || fallback.warm];\n}\n\nfunction timelineClause(timeline) {\n  const clauses = {\n    asap: \"needs a working version this week\",\n    this_month: \"wants this live within the month\",\n    this_quarter: \"is planning the rollout this quarter\",\n    this_year: \"is scoping the work for later in the year\",\n    exploring: \"is exploring and has not picked a start date\",\n  };\n  return clauses[timeline] || \"did not share a timeline\";\n}\n\nfunction mockEnrich(lead, scored, routing) {\n  const industry = inferIndustry(lead);\n  const painPoints = inferPainPoints(lead, routing);\n  const personalizationHooks = [];\n  if (lead.role && lead.company) personalizationHooks.push(`${lead.role} at ${lead.company}`);\n  personalizationHooks.push(TIMELINE_LABELS[lead.timeline] || \"Timeline not set\");\n  if (lead.budgetUsd != null) personalizationHooks.push(`Budget band ${lead.budgetLabel}`);\n  if (painPoints[0]) personalizationHooks.push(painPoints[0]);\n\n  const intentSummary = `${lead.company}, a ${industry.toLowerCase()} team, ${timelineClause(lead.timeline)}. ${lead.name} (${lead.role}) wrote in because ${painPoints[0]}.`;\n  const next = {\n    hot: `Call ${lead.name.split(/\\s+/)[0]} within 15 minutes. Use the draft, then offer to stand up the form → CRM → Slack path on their stack.`,\n    warm: `Reply within four hours. Offer Jordan Hale's 30-minute working session and send the draft as written.`,\n    cold: \"Do not book a sales call. Add the contact to the nurture sequence and mention them in the daily digest.\",\n    disqualified: \"Do not email the sender. An operator clears or drops the row from #review-queue.\",\n  };\n\n  const draft = buildDraft(lead, routing, painPoints, industry);\n  return {\n    industry,\n    companySize: inferCompanySize(lead.budgetUsd),\n    intentSummary,\n    painPoints,\n    personalizationHooks: personalizationHooks.slice(0, 4),\n    recommendedNextAction: next[routing.tier] || next.warm,\n    draftSubject: draft.draftSubject,\n    draftBody: draft.draftBody,\n    provider: \"mock\",\n    model: \"mock-lead-autopilot-v1\",\n    scoreUsed: scored.score,\n  };\n}\n\nfunction buildDraft(lead, routing, painPoints, industry) {\n  if (routing.tier === \"disqualified\") {\n    return {\n      draftSubject: `Hold: ${lead.company}`,\n      draftBody: [\n        \"Internal note. Do not send this to the submitter.\",\n        \"\",\n        `${lead.name} <${lead.email}> was held: ${routing.reason}`,\n        `Company: ${lead.company}.`,\n        \"Leave the row in #review-queue until an operator clears it.\",\n      ].join(\"\\n\"),\n    };\n  }\n  const first = lead.name.split(/\\s+/)[0];\n  const painSentence = painPoints[0]\n    ? `The sticking point you described: ${painPoints[0]}.`\n    : \"The sticking point is the handoff from the form to someone who can answer.\";\n  const close = {\n    hot: \"I can put a working version on a call this week: the form is scored, the CRM row is written, and Slack pings the owner. If that is the right shape, we wire it to your stack before the week is out.\",\n    warm: \"If you want, we can spend half an hour mapping this onto n8n, Make, or Zapier and leave you with the CRM row and the alert actually firing.\",\n    cold: \"No need to book anything. When the timing is real, the same path — score, file, draft, alert — is a small build.\",\n  };\n  const subject = {\n    hot: `${lead.company}'s lead inbox, scored before anyone is pinged`,\n    warm: `From ${lead.company}'s form to the CRM, without the copy-paste`,\n    cold: `A note on ${lead.company}'s inbound, for whenever you pick it up`,\n  };\n  return {\n    draftSubject: subject[routing.tier],\n    draftBody: [\n      `Hi ${first},`,\n      \"\",\n      `Thanks for the note about ${lead.company}. ${painSentence}`,\n      \"\",\n      `For a ${industry.toLowerCase()} team, I would keep the first version deliberately small. One public form. A score with the reason attached. A CRM row in a sheet, Airtable, or the system you already use. A draft reply. A Slack alert to ${routing.owner}.`,\n      \"\",\n      close[routing.tier],\n      \"\",\n      \"— Northline\",\n    ].join(\"\\n\"),\n  };\n}\n\nfunction buildEnrichmentPrompt(lead, scored, routing) {\n  return {\n    system: [\n      \"You qualify inbound leads for Northline, an automation studio.\",\n      \"Return one JSON object and nothing else.\",\n      \"Use exactly these keys: industry, companySize, intentSummary, painPoints, personalizationHooks, recommendedNextAction, draftSubject, draftBody.\",\n      \"painPoints and personalizationHooks are arrays of short strings.\",\n      \"draftBody is a short email the studio can send, signed — Northline.\",\n      \"Do not invent a budget or a timeline the lead did not provide.\",\n      \"If the tier is disqualified, draftBody is an internal note that begins with 'Internal note. Do not send this to the submitter.'\",\n    ].join(\" \"),\n    user: JSON.stringify({\n      lead,\n      score: scored.score,\n      breakdown: scored.breakdown,\n      flags: scored.flags,\n      routing,\n    }),\n  };\n}\n\nfunction normalizeEnrichment(parsed, provider, model) {\n  if (!parsed || typeof parsed !== \"object\" || Array.isArray(parsed)) {\n    throw new Error(\"Enrichment was not a JSON object.\");\n  }\n  const required = [\n    \"industry\",\n    \"companySize\",\n    \"intentSummary\",\n    \"painPoints\",\n    \"personalizationHooks\",\n    \"recommendedNextAction\",\n    \"draftSubject\",\n    \"draftBody\",\n  ];\n  const missing = required.filter((key) => parsed[key] == null || parsed[key] === \"\");\n  if (missing.length) {\n    throw new Error(`Enrichment JSON is missing: ${missing.join(\", \")}.`);\n  }\n  if (!Array.isArray(parsed.painPoints) || !Array.isArray(parsed.personalizationHooks)) {\n    throw new Error(\"painPoints and personalizationHooks must be arrays.\");\n  }\n  return {\n    industry: String(parsed.industry),\n    companySize: String(parsed.companySize),\n    intentSummary: String(parsed.intentSummary),\n    painPoints: parsed.painPoints.map(String),\n    personalizationHooks: parsed.personalizationHooks.map(String),\n    recommendedNextAction: String(parsed.recommendedNextAction),\n    draftSubject: String(parsed.draftSubject),\n    draftBody: String(parsed.draftBody),\n    provider,\n    model,\n  };\n}\n\nfunction extractJsonObject(content) {\n  const raw = String(content || \"\").trim();\n  const fenced = raw.replace(/^```(?:json)?\\s*/i, \"\").replace(/\\s*```$/, \"\");\n  try {\n    return JSON.parse(fenced);\n  } catch {\n    const start = fenced.indexOf(\"{\");\n    const end = fenced.lastIndexOf(\"}\");\n    if (start >= 0 && end > start) return JSON.parse(fenced.slice(start, end + 1));\n    throw new Error(\"The model did not return JSON.\");\n  }\n}\n\nfunction createId(prefix, now = Date.now(), rand = Math.random()) {\n  const time = Math.floor(now).toString(36);\n  const noise = Math.floor(rand * 1679616)\n    .toString(36)\n    .padStart(4, \"0\");\n  return `${prefix}_${time}${noise}`;\n}\n\nfunction assembleRecord(lead, scored, routing, enrichment, meta) {\n  return {\n    id: meta.id,\n    createdAt: meta.createdAt,\n    name: lead.name,\n    email: lead.email,\n    company: lead.company,\n    role: lead.role,\n    website: lead.website,\n    message: lead.message,\n    budgetUsd: lead.budgetUsd,\n    budgetBand: lead.budgetBand,\n    budgetLabel: lead.budgetLabel,\n    timeline: lead.timeline,\n    source: lead.source || \"web_form\",\n    score: scored.score,\n    breakdown: scored.breakdown,\n    flags: scored.flags,\n    tier: routing.tier,\n    owner: routing.owner,\n    ownerRole: routing.ownerRole,\n    channel: routing.channel,\n    slaMinutes: routing.slaMinutes,\n    routeReason: routing.reason,\n    industry: enrichment.industry,\n    companySize: enrichment.companySize,\n    intentSummary: enrichment.intentSummary,\n    painPoints: enrichment.painPoints,\n    personalizationHooks: enrichment.personalizationHooks,\n    nextAction: enrichment.recommendedNextAction,\n    draftSubject: enrichment.draftSubject,\n    draftBody: enrichment.draftBody,\n    llmProvider: enrichment.provider,\n    llmModel: enrichment.model,\n    alertStatus: meta.alertStatus || \"pending\",\n    alertId: meta.alertId || \"\",\n    origin: meta.origin || \"typescript\",\n    steps: meta.steps || [],\n  };\n}\n\nfunction buildSlackPayload(record) {\n  const label = record.tier === \"disqualified\" ? \"Review hold\" : `${TIER_LABELS[record.tier] || record.tier} lead`;\n  const text = `${label}: ${record.name} at ${record.company} — score ${record.score} — ${record.owner} — ${record.slaMinutes}m SLA`;\n  return {\n    text,\n    blocks: [\n      {\n        type: \"header\",\n        text: { type: \"plain_text\", text: `${label} · ${record.score}`, emoji: false },\n      },\n      {\n        type: \"section\",\n        fields: [\n          { type: \"mrkdwn\", text: `*Contact*\\n${record.name}\\n${record.email}` },\n          { type: \"mrkdwn\", text: `*Company*\\n${record.company}\\n${record.role}` },\n          { type: \"mrkdwn\", text: `*Owner*\\n${record.owner}\\n${record.slaMinutes} min SLA` },\n          { type: \"mrkdwn\", text: `*Channel*\\n${record.channel}` },\n        ],\n      },\n      {\n        type: \"section\",\n        text: { type: \"mrkdwn\", text: `*Intent*\\n${record.intentSummary}` },\n      },\n      {\n        type: \"section\",\n        text: { type: \"mrkdwn\", text: `*Draft*\\n${record.draftSubject}` },\n      },\n    ],\n  };\n}\n\nfunction csvEscape(value) {\n  if (value == null) return \"\";\n  const stringValue = Array.isArray(value) ? value.join(\" | \") : String(value);\n  if (/[\",\\n\\r]/.test(stringValue)) return `\"${stringValue.replace(/\"/g, '\"\"')}\"`;\n  return stringValue;\n}\n\nfunction recordToCsvValues(record) {\n  return [\n    record.id,\n    record.createdAt,\n    record.name,\n    record.email,\n    record.company,\n    record.role,\n    record.website,\n    record.message,\n    record.budgetUsd ?? \"\",\n    record.budgetLabel,\n    record.timeline,\n    record.source,\n    record.score,\n    record.tier,\n    record.owner,\n    record.ownerRole,\n    record.channel,\n    record.slaMinutes,\n    record.routeReason,\n    record.industry,\n    record.companySize,\n    record.intentSummary,\n    record.painPoints,\n    record.personalizationHooks,\n    record.nextAction,\n    record.draftSubject,\n    record.draftBody,\n    record.llmProvider,\n    record.llmModel,\n    record.alertStatus,\n    record.origin,\n  ];\n}\n\nfunction leadsToCsv(records) {\n  const lines = [CSV_HEADERS.map(csvEscape).join(\",\")];\n  for (const record of records) {\n    lines.push(recordToCsvValues(record).map(csvEscape).join(\",\"));\n  }\n  return `\\uFEFF${lines.join(\"\\n\")}\\n`;\n}\n\nfunction assertStoredRecord(record) {\n  if (!record || typeof record !== \"object\") {\n    throw new Error(\"A lead record is required.\");\n  }\n  const required = [\"id\", \"createdAt\", \"name\", \"email\", \"company\", \"score\", \"tier\", \"owner\", \"channel\", \"draftBody\"];\n  const missing = required.filter((key) => record[key] == null || record[key] === \"\");\n  if (missing.length) throw new Error(`Lead record is missing: ${missing.join(\", \")}.`);\n  if (!Object.prototype.hasOwnProperty.call(TIER_LABELS, record.tier)) {\n    throw new Error(`Unknown tier: ${record.tier}.`);\n  }\n  if (typeof record.score !== \"number\" || record.score < 0 || record.score > 100) {\n    throw new Error(\"Score must be a number from 0 to 100.\");\n  }\n  return record;\n}\n\nconst api = {\n  FREE_EMAIL_DOMAINS,\n  DISPOSABLE_EMAIL_DOMAINS,\n  TIMELINE_LABELS,\n  TIER_LABELS,\n  BREAKDOWN_META,\n  CSV_HEADERS,\n  ROUTES,\n  validateLead,\n  scoreLead,\n  routeLead,\n  mockEnrich,\n  buildEnrichmentPrompt,\n  normalizeEnrichment,\n  extractJsonObject,\n  createId,\n  assembleRecord,\n  buildSlackPayload,\n  csvEscape,\n  leadsToCsv,\n  assertStoredRecord,\n  budgetLabel,\n  inferIndustry,\n};\n// LEAD_LOGIC_END\nconst incoming = $input.first().json;\nconst body =\n  incoming.body && typeof incoming.body === \"object\" && !Array.isArray(incoming.body)\n    ? incoming.body\n    : incoming;\nconst validated = validateLead(body);\nif (!validated.ok) {\n  return [{ json: { ok: \"no\", errors: validated.errors, config: CONFIG } }];\n}\nconst scored = scoreLead(validated.lead);\nconst routing = routeLead(validated.lead, scored);\nconst prompts = buildEnrichmentPrompt(validated.lead, scored, routing);\nreturn [{\n  json: {\n    ok: \"yes\",\n    config: CONFIG,\n    lead: validated.lead,\n    scored,\n    routing,\n    prompts,\n  },\n}];\n"
+      },
+      "id": "b2000000-0000-4000-8000-000000000002",
+      "name": "Score and route",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        740,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d4000000-0000-4000-8000-000000000001",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "yes",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b2000000-0000-4000-8000-000000000003",
+      "name": "Valid lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1000,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, errors: $json.errors }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "b2000000-0000-4000-8000-000000000004",
+      "name": "Reject invalid lead",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1240,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.config.pipelineBaseUrl + '/api/llm/enrich' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ lead: $json.lead, scored: $json.scored, routing: $json.routing }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "b2000000-0000-4000-8000-000000000005",
+      "name": "AI enrich",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1240,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'gpt-4o-mini', temperature: 0, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: $json.prompts.system }, { role: 'user', content: $json.prompts.user }] }) }}",
+        "options": {}
+      },
+      "id": "b2000000-0000-4000-8000-000000000006",
+      "name": "OpenAI direct",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1240,
+        680
+      ],
+      "disabled": true,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "PLACEHOLDER_OPENAI_HEADER_AUTH",
+          "name": "OpenAI-compatible Authorization header (placeholder)"
+        }
+      },
+      "notes": "Disabled. Enable and wire it in place of AI enrich when you want n8n to call an OpenAI-compatible API directly. Attach the placeholder Header Auth credential. Never put the key in this file.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "\n// LEAD_LOGIC_START\n// Shared lead logic for the TypeScript pipeline, the CLI, and the n8n Code\n// nodes. Keep this file free of Node-only APIs so it can be embedded as-is.\n\nconst FREE_EMAIL_DOMAINS = new Set([\n  \"gmail.com\",\n  \"googlemail.com\",\n  \"yahoo.com\",\n  \"yahoo.co.uk\",\n  \"hotmail.com\",\n  \"outlook.com\",\n  \"live.com\",\n  \"icloud.com\",\n  \"me.com\",\n  \"aol.com\",\n  \"proton.me\",\n  \"protonmail.com\",\n  \"gmx.com\",\n  \"mail.com\",\n  \"msn.com\",\n]);\n\nconst DISPOSABLE_EMAIL_DOMAINS = new Set([\n  \"mailinator.com\",\n  \"guerrillamail.com\",\n  \"tempmail.com\",\n  \"10minutemail.com\",\n  \"yopmail.com\",\n  \"trashmail.com\",\n]);\n\nconst SPAM_PATTERNS = [\n  /\\bguest posts?\\b/i,\n  /\\bbacklinks?\\b/i,\n  /\\bcrypto airdrop\\b/i,\n  /\\bbuy followers\\b/i,\n];\n\nconst BUDGET_BANDS = {\n  under_1500: 800,\n  \"1500_4999\": 1500,\n  \"5000_14999\": 5000,\n  \"15000_plus\": 15000,\n  unknown: null,\n};\n\nconst TIMELINE_ALIASES = {\n  asap: \"asap\",\n  immediate: \"asap\",\n  immediately: \"asap\",\n  this_week: \"asap\",\n  \"this week\": \"asap\",\n  this_month: \"this_month\",\n  \"this month\": \"this_month\",\n  this_quarter: \"this_quarter\",\n  \"this quarter\": \"this_quarter\",\n  this_year: \"this_year\",\n  \"this year\": \"this_year\",\n  exploring: \"exploring\",\n  \"just exploring\": \"exploring\",\n  someday: \"exploring\",\n};\n\nconst TIMELINE_LABELS = {\n  asap: \"This week\",\n  this_month: \"This month\",\n  this_quarter: \"This quarter\",\n  this_year: \"This year\",\n  exploring: \"Exploring\",\n};\n\nconst TIER_LABELS = {\n  hot: \"Hot\",\n  warm: \"Warm\",\n  cold: \"Cold\",\n  disqualified: \"Review\",\n};\n\nconst BREAKDOWN_META = [\n  { key: \"budget\", label: \"Budget\", max: 30 },\n  { key: \"timeline\", label: \"Timeline\", max: 25 },\n  { key: \"emailDomain\", label: \"Work email\", max: 15 },\n  { key: \"seniority\", label: \"Role\", max: 15 },\n  { key: \"intent\", label: \"Intent in the note\", max: 10 },\n  { key: \"website\", label: \"Website\", max: 5 },\n];\n\nconst CSV_HEADERS = [\n  \"Lead ID\",\n  \"Created At\",\n  \"Full Name\",\n  \"Email\",\n  \"Company\",\n  \"Role\",\n  \"Website\",\n  \"Need\",\n  \"Monthly Budget USD\",\n  \"Budget Label\",\n  \"Timeline\",\n  \"Source\",\n  \"Score\",\n  \"Tier\",\n  \"Owner\",\n  \"Owner Role\",\n  \"Slack Channel\",\n  \"SLA Minutes\",\n  \"Route Reason\",\n  \"Industry\",\n  \"Company Size\",\n  \"Intent\",\n  \"Pain Points\",\n  \"Personalization Hooks\",\n  \"Next Action\",\n  \"Draft Subject\",\n  \"Draft Body\",\n  \"LLM Provider\",\n  \"LLM Model\",\n  \"Alert Status\",\n  \"Origin\",\n];\n\nconst ROUTES = {\n  disqualified: {\n    tier: \"disqualified\",\n    owner: \"Review queue\",\n    ownerRole: \"Ops\",\n    channel: \"#review-queue\",\n    slaMinutes: 1440,\n  },\n  hot: {\n    tier: \"hot\",\n    owner: \"Avery Chen\",\n    ownerRole: \"Senior AE\",\n    channel: \"#hot-leads\",\n    slaMinutes: 15,\n  },\n  warm: {\n    tier: \"warm\",\n    owner: \"Jordan Hale\",\n    ownerRole: \"Account executive\",\n    channel: \"#inbound\",\n    slaMinutes: 240,\n  },\n  cold: {\n    tier: \"cold\",\n    owner: \"Nurture sequence\",\n    ownerRole: \"Marketing\",\n    channel: \"#nurture-digest\",\n    slaMinutes: 1440,\n  },\n};\n\nfunction clamp(value, min, max) {\n  return Math.max(min, Math.min(max, value));\n}\n\nfunction cleanLine(value) {\n  return String(value ?? \"\")\n    .replace(/\\s+/g, \" \")\n    .trim();\n}\n\nfunction cleanMessage(value) {\n  return String(value ?? \"\")\n    .replace(/\\r\\n/g, \"\\n\")\n    .replace(/[ \\t]+\\n/g, \"\\n\")\n    .replace(/\\n{3,}/g, \"\\n\\n\")\n    .trim();\n}\n\nfunction emailDomain(email) {\n  const parts = String(email || \"\").toLowerCase().split(\"@\");\n  if (parts.length !== 2) return \"\";\n  return parts[1].replace(/\\.+$/, \"\");\n}\n\nfunction isFreeEmail(email) {\n  return FREE_EMAIL_DOMAINS.has(emailDomain(email));\n}\n\nfunction isDisposableEmail(email) {\n  return DISPOSABLE_EMAIL_DOMAINS.has(emailDomain(email));\n}\n\nfunction isSpamMessage(message) {\n  return SPAM_PATTERNS.some((pattern) => pattern.test(message || \"\"));\n}\n\nfunction bandKeyFromAmount(amount) {\n  if (amount == null) return \"unknown\";\n  if (amount >= 15000) return \"15000_plus\";\n  if (amount >= 5000) return \"5000_14999\";\n  if (amount >= 1500) return \"1500_4999\";\n  return \"under_1500\";\n}\n\nfunction budgetLabel(amount) {\n  if (amount == null) return \"Not specified\";\n  if (amount >= 15000) return \"$15,000+\";\n  if (amount >= 5000) return \"$5,000–$14,999\";\n  if (amount >= 1500) return \"$1,500–$4,999\";\n  return \"Under $1,500\";\n}\n\nfunction parseBudget(value) {\n  if (value == null || value === \"\") {\n    return { error: \"Choose a monthly budget, or say you are not sure yet.\" };\n  }\n  if (typeof value === \"number\" && Number.isFinite(value)) {\n    if (value < 0) return { error: \"Budget cannot be negative.\" };\n    const amount = Math.round(value);\n    return { amount, band: bandKeyFromAmount(amount) };\n  }\n  const text = String(value).trim().toLowerCase();\n  if (Object.prototype.hasOwnProperty.call(BUDGET_BANDS, text)) {\n    const amount = BUDGET_BANDS[text];\n    return { amount, band: text };\n  }\n  const digits = text.replace(/[$,\\s]/g, \"\").replace(/\\+$/, \"\");\n  if (/^\\d+(\\.\\d+)?$/.test(digits)) {\n    const amount = Math.round(Number(digits));\n    return { amount, band: bandKeyFromAmount(amount) };\n  }\n  return { error: \"Choose a monthly budget, or say you are not sure yet.\" };\n}\n\nfunction parseTimeline(value) {\n  const text = cleanLine(value).toLowerCase();\n  if (!text) return { error: \"Choose a timeline.\" };\n  const timeline = TIMELINE_ALIASES[text];\n  if (!timeline) return { error: \"Choose a timeline the autopilot understands.\" };\n  return { timeline };\n}\n\nfunction parseWebsite(value) {\n  const raw = cleanLine(value);\n  if (!raw) return { website: \"\" };\n  const withScheme = /^https?:\\/\\//i.test(raw) ? raw : `https://${raw}`;\n  let url;\n  try {\n    url = new URL(withScheme);\n  } catch {\n    return { error: \"That website does not look like a domain.\" };\n  }\n  if (!url.hostname.includes(\".\") || !/^[\\w.-]+$/.test(url.hostname)) {\n    return { error: \"That website does not look like a domain.\" };\n  }\n  const path = url.pathname === \"/\" ? \"\" : url.pathname.replace(/\\/$/, \"\");\n  return { website: `https://${url.hostname}${path}` };\n}\n\nfunction validateLead(input) {\n  const source = input && typeof input === \"object\" ? input : {};\n  const errors = {};\n  const name = cleanLine(source.name);\n  const email = cleanLine(source.email).toLowerCase();\n  const company = cleanLine(source.company);\n  const role = cleanLine(source.role);\n  const message = cleanMessage(source.message);\n  const originSource = cleanLine(source.source || \"web_form\").slice(0, 40) || \"web_form\";\n\n  if (name.length < 2) errors.name = \"Add the person's name.\";\n  if (name.length > 80) errors.name = \"Keep the name under 80 characters.\";\n  if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) {\n    errors.email = \"Add a real email address.\";\n  }\n  if (company.length < 2) errors.company = \"Add a company or project name.\";\n  if (company.length > 80) errors.company = \"Keep the company name under 80 characters.\";\n  if (role.length < 2) errors.role = \"Add a role, even if it is Founder or Student.\";\n  if (role.length > 80) errors.role = \"Keep the role under 80 characters.\";\n  if (message.length < 12) errors.message = \"Tell us what should happen after the form is submitted.\";\n  if (message.length > 2000) errors.message = \"Keep the note under 2,000 characters.\";\n\n  const budget = parseBudget(source.budget);\n  if (budget.error) errors.budget = budget.error;\n  const timeline = parseTimeline(source.timeline);\n  if (timeline.error) errors.timeline = timeline.error;\n  const website = parseWebsite(source.website);\n  if (website.error) errors.website = website.error;\n\n  if (Object.keys(errors).length) return { ok: false, errors };\n\n  return {\n    ok: true,\n    lead: {\n      name,\n      email,\n      company,\n      role,\n      website: website.website,\n      message,\n      budgetUsd: budget.amount,\n      budgetBand: budget.band,\n      budgetLabel: budgetLabel(budget.amount),\n      timeline: timeline.timeline,\n      source: originSource,\n    },\n  };\n}\n\nfunction scoreBudget(amount) {\n  if (amount == null) return 4;\n  if (amount >= 15000) return 30;\n  if (amount >= 5000) return 22;\n  if (amount >= 1500) return 14;\n  return 6;\n}\n\nfunction scoreTimeline(timeline) {\n  const points = { asap: 25, this_month: 22, this_quarter: 16, this_year: 8, exploring: 4 };\n  return points[timeline] ?? 2;\n}\n\nfunction scoreEmail(email) {\n  if (!String(email || \"\").includes(\"@\")) return 0;\n  if (isDisposableEmail(email)) return 0;\n  if (isFreeEmail(email)) return 4;\n  return 15;\n}\n\nfunction scoreSeniority(role) {\n  const text = String(role || \"\").toLowerCase();\n  if (/(founder|co-founder|cofounder|\\bceo\\b|\\bowner\\b|\\bpresident\\b|\\bpartner\\b|managing director)/.test(text)) {\n    return 15;\n  }\n  if (/(\\bvp\\b|vice president|\\bdirector\\b|head of|\\bchief\\b)/.test(text)) return 12;\n  if (/(\\bmanager\\b|\\blead\\b)/.test(text)) return 8;\n  return 4;\n}\n\nfunction scoreIntent(message) {\n  const text = String(message || \"\");\n  let points = 0;\n  if (/\\b(automation|workflow|n8n|zapier|make\\.com|integromat)\\b/i.test(text)) points += 4;\n  if (/\\b(crm|hubspot|salesforce|airtable|google sheets?|spreadsheets?)\\b/i.test(text)) points += 3;\n  if (/\\b(leads?|inbound|pipeline)\\b/i.test(text)) points += 3;\n  return Math.min(10, points);\n}\n\nfunction scoreLead(lead) {\n  const breakdown = {\n    budget: scoreBudget(lead.budgetUsd),\n    timeline: scoreTimeline(lead.timeline),\n    emailDomain: scoreEmail(lead.email),\n    seniority: scoreSeniority(lead.role),\n    intent: scoreIntent(lead.message),\n    website: lead.website ? 5 : 0,\n    penalties: 0,\n  };\n  const flags = [];\n  if (!String(lead.email || \"\").includes(\"@\")) {\n    flags.push(\"invalid_email\");\n    breakdown.penalties += 30;\n  } else if (isDisposableEmail(lead.email)) {\n    flags.push(\"disposable_email\");\n    breakdown.penalties += 40;\n  }\n  if (isSpamMessage(lead.message)) {\n    flags.push(\"spam_pattern\");\n    breakdown.penalties += 50;\n  }\n  const positive =\n    breakdown.budget +\n    breakdown.timeline +\n    breakdown.emailDomain +\n    breakdown.seniority +\n    breakdown.intent +\n    breakdown.website;\n  const score = clamp(positive - breakdown.penalties, 0, 100);\n  return { score, breakdown, flags };\n}\n\nfunction routeLead(lead, scored) {\n  const flags = scored.flags || [];\n  if (flags.includes(\"spam_pattern\") || flags.includes(\"disposable_email\") || flags.includes(\"invalid_email\")) {\n    return {\n      ...ROUTES.disqualified,\n      reason: `Held for review (${flags.join(\", \")}). ${lead.email} is not routed to sales.`,\n    };\n  }\n  if (scored.score >= 70) {\n    return {\n      ...ROUTES.hot,\n      reason: \"Score 70 or higher. A senior AE owns the first response.\",\n    };\n  }\n  if (scored.score >= 40) {\n    return {\n      ...ROUTES.warm,\n      reason: \"Score 40 to 69. Standard inbound response within four hours.\",\n    };\n  }\n  return {\n    ...ROUTES.cold,\n    reason: \"Score under 40. File it and include it in the daily nurture digest.\",\n  };\n}\n\nfunction inferIndustry(lead) {\n  const haystack = `${lead.company} ${lead.message} ${lead.website}`;\n  const rules = [\n    [/clinic|dental|patient|health|hospital|therapy/i, \"Healthcare\"],\n    [/realtor|real estate|property|brokerage|mortgage/i, \"Real estate\"],\n    [/parcel|logistics|shipping|freight|warehouse/i, \"Logistics\"],\n    [/shopify|ecommerce|e-commerce|online store|\\bdtc\\b/i, \"Ecommerce\"],\n    [/law firm|attorney|legal|counsel/i, \"Legal services\"],\n    [/agency|marketing|demand gen|\\bads\\b/i, \"Marketing agency\"],\n    [/saas|software|platform|devtools/i, \"B2B software\"],\n  ];\n  for (const [pattern, industry] of rules) {\n    if (pattern.test(haystack)) return industry;\n  }\n  return \"Professional services\";\n}\n\nfunction inferCompanySize(amount) {\n  if (amount == null) return \"Unknown\";\n  if (amount >= 15000) return \"201-1,000\";\n  if (amount >= 5000) return \"51-200\";\n  if (amount >= 1500) return \"11-50\";\n  return \"1-10\";\n}\n\nfunction inferPainPoints(lead, routing) {\n  const text = lead.message || \"\";\n  const rules = [\n    [/shared inbox|\\binbox\\b/i, \"new inquiries land in a shared inbox and sit there\"],\n    [/spreadsheet|google sheet|copy|manual|by hand/i, \"lead fields are copied by hand into a sheet or CRM\"],\n    [/hubspot|salesforce|\\bcrm\\b/i, \"the CRM record is missing the context sales needs\"],\n    [/slack|notify|alert|ping/i, \"the right person hears about the lead too late\"],\n    [/follow-?up|response time|\\bslow\\b/i, \"first response depends on whoever notices the form\"],\n    [/n8n|zapier|make\\.com|integromat/i, \"an existing automation stack still needs a judgment step\"],\n    [/score|qualif/i, \"every lead is treated the same, whether or not it is real\"],\n  ];\n  const found = [];\n  for (const [pattern, pain] of rules) {\n    if (pattern.test(text) && !found.includes(pain)) found.push(pain);\n  }\n  if (found.length) return found.slice(0, 3);\n  const fallback = {\n    hot: \"the team needs a person on the lead immediately, and the handoff is still manual\",\n    warm: \"inbound requests arrive, but the path into the CRM is still fuzzy\",\n    cold: \"there is curiosity about automation, without a live process to fix yet\",\n    disqualified: \"the submission does not look like a real project inquiry\",\n  };\n  return [fallback[routing.tier] || fallback.warm];\n}\n\nfunction timelineClause(timeline) {\n  const clauses = {\n    asap: \"needs a working version this week\",\n    this_month: \"wants this live within the month\",\n    this_quarter: \"is planning the rollout this quarter\",\n    this_year: \"is scoping the work for later in the year\",\n    exploring: \"is exploring and has not picked a start date\",\n  };\n  return clauses[timeline] || \"did not share a timeline\";\n}\n\nfunction mockEnrich(lead, scored, routing) {\n  const industry = inferIndustry(lead);\n  const painPoints = inferPainPoints(lead, routing);\n  const personalizationHooks = [];\n  if (lead.role && lead.company) personalizationHooks.push(`${lead.role} at ${lead.company}`);\n  personalizationHooks.push(TIMELINE_LABELS[lead.timeline] || \"Timeline not set\");\n  if (lead.budgetUsd != null) personalizationHooks.push(`Budget band ${lead.budgetLabel}`);\n  if (painPoints[0]) personalizationHooks.push(painPoints[0]);\n\n  const intentSummary = `${lead.company}, a ${industry.toLowerCase()} team, ${timelineClause(lead.timeline)}. ${lead.name} (${lead.role}) wrote in because ${painPoints[0]}.`;\n  const next = {\n    hot: `Call ${lead.name.split(/\\s+/)[0]} within 15 minutes. Use the draft, then offer to stand up the form → CRM → Slack path on their stack.`,\n    warm: `Reply within four hours. Offer Jordan Hale's 30-minute working session and send the draft as written.`,\n    cold: \"Do not book a sales call. Add the contact to the nurture sequence and mention them in the daily digest.\",\n    disqualified: \"Do not email the sender. An operator clears or drops the row from #review-queue.\",\n  };\n\n  const draft = buildDraft(lead, routing, painPoints, industry);\n  return {\n    industry,\n    companySize: inferCompanySize(lead.budgetUsd),\n    intentSummary,\n    painPoints,\n    personalizationHooks: personalizationHooks.slice(0, 4),\n    recommendedNextAction: next[routing.tier] || next.warm,\n    draftSubject: draft.draftSubject,\n    draftBody: draft.draftBody,\n    provider: \"mock\",\n    model: \"mock-lead-autopilot-v1\",\n    scoreUsed: scored.score,\n  };\n}\n\nfunction buildDraft(lead, routing, painPoints, industry) {\n  if (routing.tier === \"disqualified\") {\n    return {\n      draftSubject: `Hold: ${lead.company}`,\n      draftBody: [\n        \"Internal note. Do not send this to the submitter.\",\n        \"\",\n        `${lead.name} <${lead.email}> was held: ${routing.reason}`,\n        `Company: ${lead.company}.`,\n        \"Leave the row in #review-queue until an operator clears it.\",\n      ].join(\"\\n\"),\n    };\n  }\n  const first = lead.name.split(/\\s+/)[0];\n  const painSentence = painPoints[0]\n    ? `The sticking point you described: ${painPoints[0]}.`\n    : \"The sticking point is the handoff from the form to someone who can answer.\";\n  const close = {\n    hot: \"I can put a working version on a call this week: the form is scored, the CRM row is written, and Slack pings the owner. If that is the right shape, we wire it to your stack before the week is out.\",\n    warm: \"If you want, we can spend half an hour mapping this onto n8n, Make, or Zapier and leave you with the CRM row and the alert actually firing.\",\n    cold: \"No need to book anything. When the timing is real, the same path — score, file, draft, alert — is a small build.\",\n  };\n  const subject = {\n    hot: `${lead.company}'s lead inbox, scored before anyone is pinged`,\n    warm: `From ${lead.company}'s form to the CRM, without the copy-paste`,\n    cold: `A note on ${lead.company}'s inbound, for whenever you pick it up`,\n  };\n  return {\n    draftSubject: subject[routing.tier],\n    draftBody: [\n      `Hi ${first},`,\n      \"\",\n      `Thanks for the note about ${lead.company}. ${painSentence}`,\n      \"\",\n      `For a ${industry.toLowerCase()} team, I would keep the first version deliberately small. One public form. A score with the reason attached. A CRM row in a sheet, Airtable, or the system you already use. A draft reply. A Slack alert to ${routing.owner}.`,\n      \"\",\n      close[routing.tier],\n      \"\",\n      \"— Northline\",\n    ].join(\"\\n\"),\n  };\n}\n\nfunction buildEnrichmentPrompt(lead, scored, routing) {\n  return {\n    system: [\n      \"You qualify inbound leads for Northline, an automation studio.\",\n      \"Return one JSON object and nothing else.\",\n      \"Use exactly these keys: industry, companySize, intentSummary, painPoints, personalizationHooks, recommendedNextAction, draftSubject, draftBody.\",\n      \"painPoints and personalizationHooks are arrays of short strings.\",\n      \"draftBody is a short email the studio can send, signed — Northline.\",\n      \"Do not invent a budget or a timeline the lead did not provide.\",\n      \"If the tier is disqualified, draftBody is an internal note that begins with 'Internal note. Do not send this to the submitter.'\",\n    ].join(\" \"),\n    user: JSON.stringify({\n      lead,\n      score: scored.score,\n      breakdown: scored.breakdown,\n      flags: scored.flags,\n      routing,\n    }),\n  };\n}\n\nfunction normalizeEnrichment(parsed, provider, model) {\n  if (!parsed || typeof parsed !== \"object\" || Array.isArray(parsed)) {\n    throw new Error(\"Enrichment was not a JSON object.\");\n  }\n  const required = [\n    \"industry\",\n    \"companySize\",\n    \"intentSummary\",\n    \"painPoints\",\n    \"personalizationHooks\",\n    \"recommendedNextAction\",\n    \"draftSubject\",\n    \"draftBody\",\n  ];\n  const missing = required.filter((key) => parsed[key] == null || parsed[key] === \"\");\n  if (missing.length) {\n    throw new Error(`Enrichment JSON is missing: ${missing.join(\", \")}.`);\n  }\n  if (!Array.isArray(parsed.painPoints) || !Array.isArray(parsed.personalizationHooks)) {\n    throw new Error(\"painPoints and personalizationHooks must be arrays.\");\n  }\n  return {\n    industry: String(parsed.industry),\n    companySize: String(parsed.companySize),\n    intentSummary: String(parsed.intentSummary),\n    painPoints: parsed.painPoints.map(String),\n    personalizationHooks: parsed.personalizationHooks.map(String),\n    recommendedNextAction: String(parsed.recommendedNextAction),\n    draftSubject: String(parsed.draftSubject),\n    draftBody: String(parsed.draftBody),\n    provider,\n    model,\n  };\n}\n\nfunction extractJsonObject(content) {\n  const raw = String(content || \"\").trim();\n  const fenced = raw.replace(/^```(?:json)?\\s*/i, \"\").replace(/\\s*```$/, \"\");\n  try {\n    return JSON.parse(fenced);\n  } catch {\n    const start = fenced.indexOf(\"{\");\n    const end = fenced.lastIndexOf(\"}\");\n    if (start >= 0 && end > start) return JSON.parse(fenced.slice(start, end + 1));\n    throw new Error(\"The model did not return JSON.\");\n  }\n}\n\nfunction createId(prefix, now = Date.now(), rand = Math.random()) {\n  const time = Math.floor(now).toString(36);\n  const noise = Math.floor(rand * 1679616)\n    .toString(36)\n    .padStart(4, \"0\");\n  return `${prefix}_${time}${noise}`;\n}\n\nfunction assembleRecord(lead, scored, routing, enrichment, meta) {\n  return {\n    id: meta.id,\n    createdAt: meta.createdAt,\n    name: lead.name,\n    email: lead.email,\n    company: lead.company,\n    role: lead.role,\n    website: lead.website,\n    message: lead.message,\n    budgetUsd: lead.budgetUsd,\n    budgetBand: lead.budgetBand,\n    budgetLabel: lead.budgetLabel,\n    timeline: lead.timeline,\n    source: lead.source || \"web_form\",\n    score: scored.score,\n    breakdown: scored.breakdown,\n    flags: scored.flags,\n    tier: routing.tier,\n    owner: routing.owner,\n    ownerRole: routing.ownerRole,\n    channel: routing.channel,\n    slaMinutes: routing.slaMinutes,\n    routeReason: routing.reason,\n    industry: enrichment.industry,\n    companySize: enrichment.companySize,\n    intentSummary: enrichment.intentSummary,\n    painPoints: enrichment.painPoints,\n    personalizationHooks: enrichment.personalizationHooks,\n    nextAction: enrichment.recommendedNextAction,\n    draftSubject: enrichment.draftSubject,\n    draftBody: enrichment.draftBody,\n    llmProvider: enrichment.provider,\n    llmModel: enrichment.model,\n    alertStatus: meta.alertStatus || \"pending\",\n    alertId: meta.alertId || \"\",\n    origin: meta.origin || \"typescript\",\n    steps: meta.steps || [],\n  };\n}\n\nfunction buildSlackPayload(record) {\n  const label = record.tier === \"disqualified\" ? \"Review hold\" : `${TIER_LABELS[record.tier] || record.tier} lead`;\n  const text = `${label}: ${record.name} at ${record.company} — score ${record.score} — ${record.owner} — ${record.slaMinutes}m SLA`;\n  return {\n    text,\n    blocks: [\n      {\n        type: \"header\",\n        text: { type: \"plain_text\", text: `${label} · ${record.score}`, emoji: false },\n      },\n      {\n        type: \"section\",\n        fields: [\n          { type: \"mrkdwn\", text: `*Contact*\\n${record.name}\\n${record.email}` },\n          { type: \"mrkdwn\", text: `*Company*\\n${record.company}\\n${record.role}` },\n          { type: \"mrkdwn\", text: `*Owner*\\n${record.owner}\\n${record.slaMinutes} min SLA` },\n          { type: \"mrkdwn\", text: `*Channel*\\n${record.channel}` },\n        ],\n      },\n      {\n        type: \"section\",\n        text: { type: \"mrkdwn\", text: `*Intent*\\n${record.intentSummary}` },\n      },\n      {\n        type: \"section\",\n        text: { type: \"mrkdwn\", text: `*Draft*\\n${record.draftSubject}` },\n      },\n    ],\n  };\n}\n\nfunction csvEscape(value) {\n  if (value == null) return \"\";\n  const stringValue = Array.isArray(value) ? value.join(\" | \") : String(value);\n  if (/[\",\\n\\r]/.test(stringValue)) return `\"${stringValue.replace(/\"/g, '\"\"')}\"`;\n  return stringValue;\n}\n\nfunction recordToCsvValues(record) {\n  return [\n    record.id,\n    record.createdAt,\n    record.name,\n    record.email,\n    record.company,\n    record.role,\n    record.website,\n    record.message,\n    record.budgetUsd ?? \"\",\n    record.budgetLabel,\n    record.timeline,\n    record.source,\n    record.score,\n    record.tier,\n    record.owner,\n    record.ownerRole,\n    record.channel,\n    record.slaMinutes,\n    record.routeReason,\n    record.industry,\n    record.companySize,\n    record.intentSummary,\n    record.painPoints,\n    record.personalizationHooks,\n    record.nextAction,\n    record.draftSubject,\n    record.draftBody,\n    record.llmProvider,\n    record.llmModel,\n    record.alertStatus,\n    record.origin,\n  ];\n}\n\nfunction leadsToCsv(records) {\n  const lines = [CSV_HEADERS.map(csvEscape).join(\",\")];\n  for (const record of records) {\n    lines.push(recordToCsvValues(record).map(csvEscape).join(\",\"));\n  }\n  return `\\uFEFF${lines.join(\"\\n\")}\\n`;\n}\n\nfunction assertStoredRecord(record) {\n  if (!record || typeof record !== \"object\") {\n    throw new Error(\"A lead record is required.\");\n  }\n  const required = [\"id\", \"createdAt\", \"name\", \"email\", \"company\", \"score\", \"tier\", \"owner\", \"channel\", \"draftBody\"];\n  const missing = required.filter((key) => record[key] == null || record[key] === \"\");\n  if (missing.length) throw new Error(`Lead record is missing: ${missing.join(\", \")}.`);\n  if (!Object.prototype.hasOwnProperty.call(TIER_LABELS, record.tier)) {\n    throw new Error(`Unknown tier: ${record.tier}.`);\n  }\n  if (typeof record.score !== \"number\" || record.score < 0 || record.score > 100) {\n    throw new Error(\"Score must be a number from 0 to 100.\");\n  }\n  return record;\n}\n\nconst api = {\n  FREE_EMAIL_DOMAINS,\n  DISPOSABLE_EMAIL_DOMAINS,\n  TIMELINE_LABELS,\n  TIER_LABELS,\n  BREAKDOWN_META,\n  CSV_HEADERS,\n  ROUTES,\n  validateLead,\n  scoreLead,\n  routeLead,\n  mockEnrich,\n  buildEnrichmentPrompt,\n  normalizeEnrichment,\n  extractJsonObject,\n  createId,\n  assembleRecord,\n  buildSlackPayload,\n  csvEscape,\n  leadsToCsv,\n  assertStoredRecord,\n  budgetLabel,\n  inferIndustry,\n};\n// LEAD_LOGIC_END\nconst prior = $('Score and route').first().json;\nconst response = $input.first().json;\nconst enrichment = response.enrichment;\nif (!enrichment || !enrichment.draftBody) {\n  throw new Error(\"AI enrich did not return enrichment.draftBody.\");\n}\nconst record = assembleRecord(prior.lead, prior.scored, prior.routing, enrichment, {\n  id: createId(\"lead\"),\n  createdAt: new Date().toISOString(),\n  origin: \"n8n\",\n  steps: [\n    { name: \"Intake\", status: \"ok\", detail: \"n8n webhook\", ms: 0 },\n    { name: \"Score\", status: \"ok\", detail: String(prior.scored.score) + \" / 100\", ms: 0 },\n    { name: \"Route\", status: \"ok\", detail: prior.routing.tier + \" → \" + prior.routing.owner, ms: 0 },\n    { name: \"Enrich\", status: \"ok\", detail: enrichment.provider + \" · \" + enrichment.model, ms: 0 },\n  ],\n});\nconst alert = buildSlackPayload(record);\nreturn [{ json: { record, alert, config: prior.config } }];\n"
+      },
+      "id": "b2000000-0000-4000-8000-000000000007",
+      "name": "Assemble record",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.config.pipelineBaseUrl + '/api/crm/commit' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ record: $json.record }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "b2000000-0000-4000-8000-000000000008",
+      "name": "Write CRM row",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Assemble record').first().json.config.pipelineBaseUrl + '/api/alerts' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ leadId: $json.lead.id, channel: $('Assemble record').first().json.record.channel, payload: $('Assemble record').first().json.alert }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "b2000000-0000-4000-8000-000000000009",
+      "name": "Post Slack-style alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2020,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "b2000000-0000-4000-8000-000000000010",
+      "name": "Reply to caller",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2280,
+        120
+      ]
+    }
+  ],
+  "connections": {
+    "Lead webhook": {
+      "main": [
+        [
+          {
+            "node": "Score and route",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score and route": {
+      "main": [
+        [
+          {
+            "node": "Valid lead?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid lead?": {
+      "main": [
+        [
+          {
+            "node": "AI enrich",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reject invalid lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI enrich": {
+      "main": [
+        [
+          {
+            "node": "Assemble record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Assemble record": {
+      "main": [
+        [
+          {
+            "node": "Write CRM row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write CRM row": {
+      "main": [
+        [
+          {
+            "node": "Post Slack-style alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post Slack-style alert": {
+      "main": [
+        [
+          {
+            "node": "Reply to caller",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}
