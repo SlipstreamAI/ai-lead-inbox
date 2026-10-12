@@ -4,6 +4,7 @@ import { connection } from "next/server";
 import { SiteHeader } from "@/components/site-header";
 import { getAlertForLead, getLead } from "@/lib/crm";
 import { BREAKDOWN_META, TIER_LABELS } from "@/lib/lead-logic";
+import { JevDetail } from "@/components/jev-summary";
 import { formatSla, formatWhen, sentence, tierStyle, timelineLabel } from "@/lib/view";
 
 export const metadata = {
@@ -84,10 +85,21 @@ async function LeadDetail({ params }: { params: Promise<{ id: string }> }) {
         </div>
       </header>
 
+      {lead.jev?.used ? (
+        <div className="mt-8">
+          <JevDetail jev={lead.jev} />
+        </div>
+      ) : null}
+
       <div className="mt-8 grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
         <section className="rounded-xl border border-border bg-card p-5">
           <h2 className="font-heading text-2xl">Why this score</h2>
           <p className="mt-1 text-sm text-muted-foreground">{lead.routeReason}</p>
+          {lead.jev?.used ? (
+            <p className="mt-2 text-sm text-muted-foreground">
+              The score at the top is Jev&apos;s 0–100 reading. The bars are the local rubric, kept so a fallback is visible.
+            </p>
+          ) : null}
           <ul className="mt-5 space-y-3">
             {BREAKDOWN_META.map((item) => {
               const value = lead.breakdown[item.key] ?? 0;

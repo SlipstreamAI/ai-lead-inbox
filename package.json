@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test": "node --test tests/*.test.js",
     "autopilot": "node cli/autopilot.js",
+    "jev:smoke": "node scripts/jev-smoke.js",
     "workflow:build": "node scripts/build-workflow.js",
     "workflow:check": "node scripts/build-workflow.js --check"
   },

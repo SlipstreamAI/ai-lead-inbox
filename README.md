@@ -90,6 +90,35 @@ Routing uses the score after penalties:
 
 Boundaries are tested: 70 is hot, 69 is warm, 40 is warm, 39 is cold. A founder with a huge budget still goes to review if the message is a backlink pitch.
 
+## Jev decision engine (optional)
+
+When `TYPESAFE_API_KEY` is set, the TypeScript pipeline asks [Jev](https://docs.typesafe.ai/introduction) (`jev-1.13.0`) to score and route the lead before the local rubric is used. One `POST https://api.typesafe.ai/v1/systemone` per lead sends the form as `state` and these questions together:
+
+| Question | Type | What the app does with the answer |
+| --- | --- | --- |
+| `score` | score, 10 ordered levels | Maps the 0–9 position onto the 0–100 score stored in the CRM |
+| `route` | choice: `avery`, `jordan`, `nurture`, `review` | Picks the owner, channel, and SLA |
+| `intent` | choice: `automation`, `crm`, `inbound`, `partnership`, `other` | Shown on the receipt and the lead row |
+| `spam` | noul | At 0.50 or higher, hold for human review |
+| `urgent` | noul | Shown on the receipt. At 0.50 or higher, the row is flagged urgent |
+| `needs_human` | noul | At 0.50 or higher, hold for human review |
+
+Choice and score answers also return `confidence`. If score, route, or intent confidence is below `JEV_CONFIDENCE_THRESHOLD` (default `0.6`), the lead goes to the review queue instead of the chosen owner. The receipt, the CRM row, and the Slack text show those confidences and the three gate probabilities. The local rubric bars stay on the lead page so you can compare them with Jev's score.
+
+Bring your own key. Copy [.env.example](.env.example) to `.env` and set `TYPESAFE_API_KEY`. Do not commit `.env`. The key is read only from that environment variable and is sent as `Authorization: Bearer …`. It is not written into the repo, the workflow JSON, or the CRM row.
+
+If the variable is empty, or the call times out, returns a non-200, or comes back without the six answers, the pipeline keeps the existing rubric score and route. The run still files the lead. A failed call leaves a `Jev` step that says it fell back to the local rubric.
+
+The n8n Code node still embeds the local rubric. Jev runs when the form (checkbox off), `POST /api/leads`, or `npm run autopilot` uses this app. Docker Compose forwards `TYPESAFE_API_KEY` into the web service when you export it in the shell.
+
+Live check, after you put your own key in the environment:
+
+```bash
+TYPESAFE_API_KEY=your-key npm run jev:smoke
+```
+
+That posts the hot clinic fixture once and prints the score, route, intent, gate probabilities, and whether the confidence threshold held it. `npm test` never calls TypeSafe. It mocks `fetch`.
+
 ## CRM shape
 
 SQLite lives at `$DATA_DIR/crm.sqlite` (default `./data`, gitignored). Every write rewrites `leads.csv` in the same folder, UTF-8 with a BOM, RFC 4180 quoting. Headers:
@@ -114,6 +143,9 @@ Google Sheets: File → Import → Upload `leads.csv`, or append the same column
 | `SLACK_WEBHOOK_URL` | empty | Incoming webhook. Empty keeps the alert in the app |
 | `N8N_WEBHOOK_URL` | `http://127.0.0.1:5678/webhook/lead` | Used by the form's n8n checkbox |
 | `DATA_DIR` | `./data` | SQLite and CSV directory |
+| `TYPESAFE_API_KEY` | empty | Optional Jev key. Empty keeps the local rubric |
+| `JEV_CONFIDENCE_THRESHOLD` | `0.6` | Score, route, or intent confidence below this goes to review |
+| `JEV_TIMEOUT_MS` | `20000` | Jev request timeout |
 
 Mock mode is a pure function of the lead, the score, and the route. The same input always returns the same industry, pains, and draft. It does not call the network. OpenAI mode sends one JSON-object chat completion and refuses the response if the draft or the other required keys are missing. If `LLM_MODE=openai` and the key is empty, the run fails before a CRM row is written.
 
@@ -213,6 +245,7 @@ Hot is score ≥ 70, warm is ≥ 40, cold is the rest, and any of `disposable_em
 ## Limitations
 
 - Mock enrichment is a deterministic rubric, not a language model. It is there so the demo runs with no key. Turn on `LLM_MODE=openai` when you want a real completion.
+- Jev is optional and only scores and routes. It does not write the draft. With `TYPESAFE_API_KEY` empty, no lead is sent to TypeSafe.
 - The CSV and the column list are compatible with Google Sheets and Airtable. This demo does not call the Sheets or Airtable APIs. Swap the n8n HTTP node when you want a live base.
 - Slack delivery is an incoming-webhook POST of Block Kit JSON. There is no bot token in the repo. With `SLACK_WEBHOOK_URL` empty, the alert is stored and shown in the inbox.
 - The form and the API have no authentication. Do not expose the compose stack on the public internet as-is.

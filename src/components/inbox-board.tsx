@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { LeadRecord, Tier } from "@/lib/lead-logic";
+import { formatConfidence } from "@/components/jev-summary";
 import { formatSla, formatWhen, tierStyle } from "@/lib/view";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -137,6 +138,9 @@ export function InboxBoard({ leads }: { leads: LeadRecord[] }) {
                     </span>
                     <span className="mt-0.5 block text-sm text-muted-foreground">
                       {lead.owner} · {lead.channel} · {formatSla(lead.slaMinutes)}
+                      {lead.jev?.used
+                        ? ` · Jev ${lead.jev.heldForReview ? "review" : "route"} ${formatConfidence(lead.jev.routeConfidence)}`
+                        : ""}
                     </span>
                   </span>
                   <span className="flex items-baseline gap-4 md:text-right">

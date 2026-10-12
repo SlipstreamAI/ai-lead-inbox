@@ -9,6 +9,7 @@ process.env.DATA_DIR = dir;
 process.env.LLM_MODE = "mock";
 delete process.env.SLACK_WEBHOOK_URL;
 delete process.env.LLM_API_KEY;
+delete process.env.TYPESAFE_API_KEY;
 
 const fixtures = require("../src/lib/fixtures.json");
 const { leadsToCsv, csvEscape, normalizeEnrichment } = require("../src/lib/lead-logic");

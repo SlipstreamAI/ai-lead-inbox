@@ -8,6 +8,7 @@ const {
 } = require("./lead-logic");
 const { saveLead, saveAlert, getLead } = require("./crm");
 const { enrichLead, llmMode } = require("./llm");
+const { scoreLeadWithJev } = require("./jev");
 
 function step(name, detail, started) {
   return { name, status: "ok", detail, ms: Date.now() - started };
@@ -53,12 +54,41 @@ async function runPipeline(input, options = {}) {
   }
   steps.push(step("Intake", "Accepted the form payload", started));
 
+  const rubric = scoreLead(validated.lead);
+  let scored = rubric;
+  let routing = routeLead(validated.lead, rubric);
+  let jevDecision = null;
+  if ((process.env.TYPESAFE_API_KEY || "").trim()) {
+    const jevStarted = Date.now();
+    try {
+      jevDecision = await scoreLeadWithJev(validated.lead, rubric);
+    } catch {
+      jevDecision = null;
+    }
+    if (jevDecision) {
+      scored = jevDecision.scored;
+      routing = jevDecision.routing;
+      steps.push(
+        step(
+          "Jev",
+          `${jevDecision.jev.model} · route confidence ${jevDecision.jev.routeConfidence.toFixed(2)}`,
+          jevStarted,
+        ),
+      );
+    } else {
+      steps.push({
+        name: "Jev",
+        status: "ok",
+        detail: "Call failed. Fell back to the local rubric.",
+        ms: Date.now() - jevStarted,
+      });
+    }
+  }
+
   started = Date.now();
-  const scored = scoreLead(validated.lead);
   steps.push(step("Score", `${scored.score} / 100`, started));
 
   started = Date.now();
-  const routing = routeLead(validated.lead, scored);
   steps.push(step("Route", `${routing.tier} → ${routing.owner}`, started));
 
   started = Date.now();
@@ -87,7 +117,23 @@ async function runPipeline(input, options = {}) {
     alertStatus: "pending",
     alertId,
   });
+  if (jevDecision) record.jev = jevDecision.jev;
   const alertPayload = buildSlackPayload(record);
+  if (record.jev && record.jev.used) {
+    const routeConfidence = record.jev.routeConfidence.toFixed(2);
+    alertPayload.text += ` — Jev route confidence ${routeConfidence}`;
+    alertPayload.blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: [
+          `*Jev ${record.jev.model}*`,
+          `score ${record.jev.scoreConfidence.toFixed(2)} · route ${routeConfidence} · intent ${record.jev.intent} ${record.jev.intentConfidence.toFixed(2)}`,
+          `spam ${record.jev.gates.spam.toFixed(2)} · urgent ${record.jev.gates.urgent.toFixed(2)} · needs a human ${record.jev.gates.needsHuman.toFixed(2)}`,
+        ].join("\n"),
+      },
+    });
+  }
 
   started = Date.now();
   await saveLead(record);

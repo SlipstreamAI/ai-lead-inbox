@@ -11,6 +11,7 @@ const fixtures = (Array.isArray(fixtureModule)
     : []) as typeof fixtureModule;
 import type { LeadRecord } from "@/lib/lead-logic";
 import { formatSla, sentence, tierStyle, timelineLabel } from "@/lib/view";
+import { JevReceipt } from "@/components/jev-summary";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -64,7 +65,12 @@ export function IntakeForm() {
   const [pending, setPending] = useState(false);
   const [viaN8n, setViaN8n] = useState(false);
   const [result, setResult] = useState<RunResult | null>(null);
-  const [health, setHealth] = useState<{ llmMode: string; model: string; slack: string } | null>(null);
+  const [health, setHealth] = useState<{
+    llmMode: string;
+    model: string;
+    slack: string;
+    typesafeKeySet?: boolean;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -134,9 +140,11 @@ export function IntakeForm() {
         </div>
         <p className="text-xs leading-5 text-muted-foreground sm:max-w-44 sm:text-right">
           {health
-            ? health.llmMode === "mock"
-              ? `Mock model · ${health.slack === "webhook" ? "Slack webhook on" : "alert stays in the inbox"}`
-              : `Live model ${health.model}`
+            ? `${
+                health.llmMode === "mock" ? "Mock model" : `Live model ${health.model}`
+              } · ${health.slack === "webhook" ? "Slack webhook on" : "alert stays in the inbox"}${
+                health.typesafeKeySet ? " · Jev on" : ""
+              }`
             : "Checking the pipeline…"}
         </p>
       </div>
@@ -240,7 +248,11 @@ export function IntakeForm() {
             <Button type="submit" className="h-11 px-5" disabled={pending}>
               {pending ? "Scoring, filing, drafting…" : "Run the autopilot"}
             </Button>
-            <p className="text-xs text-muted-foreground">Nothing leaves this machine while mock mode is on.</p>
+            <p className="text-xs text-muted-foreground">
+              {health?.typesafeKeySet
+                ? "Scoring is sent to TypeSafe Jev with your key. The draft stays on the mock model unless LLM_MODE=openai."
+                : "Nothing leaves this machine while mock mode is on and TYPESAFE_API_KEY is empty."}
+            </p>
           </div>
         </form>
       )}
@@ -308,6 +320,7 @@ function Receipt({ result, onReset }: { result: RunResult; onReset: () => void }
         <p className="font-heading text-6xl leading-none tabular-nums">{lead.score}</p>
       </div>
       <p className="text-sm leading-6">{lead.intentSummary}</p>
+      <JevReceipt jev={lead.jev} />
       <div className="rounded-lg border border-border bg-background px-4 py-3">
         <p className="text-[11px] tracking-[0.16em] text-muted-foreground uppercase">Draft</p>
         <p className="mt-1 font-medium">{lead.draftSubject}</p>

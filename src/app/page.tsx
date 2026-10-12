@@ -3,7 +3,7 @@ import { SiteHeader } from "@/components/site-header";
 
 const steps = [
   ["Intake", "The form on this page, or the same payload posted to n8n."],
-  ["Score", "Budget, timeline, work email, role, intent, and website. Points are fixed."],
+  ["Score", "The local rubric, or one Jev call when TYPESAFE_API_KEY is set."],
   ["Route", "Hot to Avery, warm to Jordan, cold to nurture, junk to review."],
   ["Enrich", "Industry, company size, pains, and the next action. Mock or a live model."],
   ["Draft", "A short reply in Northline's voice. Held leads get an internal note instead."],

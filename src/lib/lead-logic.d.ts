@@ -62,6 +62,27 @@ export type PipelineStep = {
   ms: number;
 };
 
+export type JevDecision = {
+  used: true;
+  model: string;
+  rawScore: number;
+  scoreConfidence: number;
+  route: string;
+  routeConfidence: number;
+  intent: string;
+  intentConfidence: number;
+  gates: { spam: number; urgent: number; needsHuman: number };
+  confidenceThreshold: number;
+  heldForReview: boolean;
+  holdReasons: string[];
+  probabilities?: {
+    score?: Record<string, number>;
+    route?: Record<string, number>;
+    intent?: Record<string, number>;
+  };
+  usage?: { input_tokens?: number; output_tokens?: number };
+};
+
 export type LeadRecord = Lead & {
   id: string;
   createdAt: string;
@@ -88,6 +109,7 @@ export type LeadRecord = Lead & {
   alertId: string;
   origin: string;
   steps: PipelineStep[];
+  jev?: JevDecision;
 };
 
 export type SlackPayload = {
